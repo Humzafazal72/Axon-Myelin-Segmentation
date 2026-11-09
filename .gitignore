@@ -1,0 +1,16 @@
+.vscode/
+Experiments/
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+/dataset/
+/test/
+/*_manifest.json
+
+# Generated training caches, model weights, and prediction artifacts.
+code/runs/
+code/checkpoints/*
+!code/checkpoints/.gitkeep
+predictions/*
+!predictions/.gitkeep

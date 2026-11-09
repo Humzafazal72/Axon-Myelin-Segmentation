@@ -1,0 +1,19 @@
+# Python 3.11+; install a CUDA-compatible torch/torchvision pair first if your
+# platform requires a specific CUDA wheel index. The CPU pair also runs tests.
+torch==2.6.0
+torchvision==0.21.0
+
+# Cellpose's training internals are version-sensitive. Keep this pin and the
+# DINOv3 revision used by the experimental fiber trainer.
+cellpose==4.2.1.1
+dinov3 @ git+https://github.com/facebookresearch/dinov3.git@6876159a11b4df116f30f667f8c9888617df0751
+
+numpy>=1.26,<2.3
+scipy>=1.10
+tifffile
+Pillow>=10
+opencv-python-headless
+fastremap
+imagecodecs
+tqdm
+gdown>=5.2,<7
