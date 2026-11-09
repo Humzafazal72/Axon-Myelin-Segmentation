@@ -1,13 +1,12 @@
 """Cellpose training with artifact-masked foreground and flow losses.
 
 The optimizer, learning-rate schedule, aligned validity augmentation, and
-checksum-bound resume sidecars are retained from the experimental trainer.
+resumable optimizer/RNG sidecars are retained from the experimental trainer.
 This module consumes original paired labels through shared preprocessing and
 uses the submission's persistent split. It does not import Experiments, require
 W&B credentials, or run the separate end-to-end evaluation experiment.
 """
 
-import hashlib
 import importlib.metadata
 import json
 import math
@@ -19,9 +18,9 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-from ..data import read_array
+from ..data import read_array, split_assignments
 from ..preprocessing import fiber_training_arrays, validate_pair
-from ..utils import resolve_device, sha256_file, write_json
+from ..utils import resolve_device, write_json
 
 CELLPOSE_VERSION = "4.2.1.1"
 
@@ -49,32 +48,26 @@ def atomic_json(path, data):
     temporary.replace(path)
 
 
-def file_sha256(path):
-    digest = hashlib.sha256()
-
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-
-    return digest.hexdigest()
+def weights_stamp(path):
+    """Detect interrupted checkpoint writes from file size and modification time."""
+    stat = Path(path).stat()
+    return [stat.st_size, stat.st_mtime_ns]
 
 
-def atomic_torch_save(state, path, checksum=False):
+def atomic_torch_save(state, path):
     import torch
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     torch.save(state, str(temporary))
-    digest = file_sha256(temporary) if checksum else None
     temporary.replace(path)
-    return digest
 
 
-def save_weights(net, path, checksum=False):
+def save_weights(net, path):
     # The inference file stays a normal Cellpose state_dict. Resume information
     # goes into separate files so datasets/classes are never needed for inference.
-    return atomic_torch_save(net.state_dict(), path, checksum=checksum)
+    atomic_torch_save(net.state_dict(), path)
 
 
 def checkpoint_paths(args):
@@ -239,8 +232,8 @@ def prepare_cached_pair(pair, args, device):
 
     image_path, mask_path = pair
 
-    # Version, target size, source paths, sizes and modification times identify
-    # the cache. Changing these produces a different cache entry automatically.
+    # Reuse one folder per image and target shape. The complete source metadata
+    # below determines whether the files in that folder need to be regenerated.
     source = {
         "version": CELLPOSE_VERSION,
         "cache_format": 4,
@@ -253,8 +246,7 @@ def prepare_cached_pair(pair, args, device):
     for path in pair:
         stat = path.stat()
         source["files"].append([str(path.resolve()), stat.st_size, stat.st_mtime_ns])
-    fingerprint = hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest()[:20]
-    folder = Path(args.cache_dir).resolve() / f"{image_path.stem}_{fingerprint}"
+    folder = Path(args.cache_dir).resolve() / f"{image_path.stem}_{args.target_h}_{args.target_w}"
     paths = {
         "image": folder / "image.tif",
         "mask": folder / "mask.tif",
@@ -555,22 +547,24 @@ def run_training(model, train_entries, val_entries, args, run):
     best_path, latest_path = paths["best"], paths["latest"]
     contract = resume_contract(args, train_entries, val_entries)
     resume_file = find_resume_weights(args)
-    progress, latest_digest = None, None
+    progress, latest_stamp = None, None
     optimizer_restored = False
 
-    # Restore inference weights first; accept progress only when its checksum matches.
+    # Restore weights first. File size/time metadata detects a newer checkpoint
+    # whose matching progress sidecar was not written before an interruption.
     if resume_file:
         state = torch.load(str(resume_file), map_location="cpu", weights_only=True)
         model.net.load_state_dict(state)
         del state
-        latest_digest = file_sha256(resume_file)
+        latest_stamp = weights_stamp(resume_file)
         if paths["progress"].is_file():
             candidate = torch.load(str(paths["progress"]), map_location="cpu", weights_only=True)
-            if candidate["weights_sha256"] == latest_digest:
-                if candidate["contract"] != contract:
-                    raise ValueError(
-                        "Resume dataset/split/model geometry differs from the saved run; use a new output directory"
-                    )
+            if candidate["contract"] != contract:
+                raise ValueError(
+                    "Resume dataset/split/model geometry differs from the saved run; use a new output directory"
+                )
+
+            if candidate.get("weights_stamp") == latest_stamp:
                 progress = candidate
             else:
                 log("Resume metadata does not match latest weights; using weights-only recovery")
@@ -619,7 +613,7 @@ def run_training(model, train_entries, val_entries, args, run):
         if paths["optimizer"].is_file() and not getattr(args, "weights_only", False):
             saved = torch.load(str(paths["optimizer"]), map_location="cpu", weights_only=True)
             if (
-                saved["weights_sha256"] == latest_digest
+                saved.get("weights_stamp") == latest_stamp
                 and saved.get("completed_epoch") == start_epoch
                 and saved.get("global_step") == global_step
             ):
@@ -658,7 +652,8 @@ def run_training(model, train_entries, val_entries, args, run):
         group["weight_decay"] = args.weight_decay
     if resume_file and resume_file.resolve() != latest_path.resolve():
         # A user-supplied checkpoint may be outside this run's output directory.
-        latest_digest = save_weights(model.net, latest_path, checksum=True)
+        save_weights(model.net, latest_path)
+        latest_stamp = weights_stamp(latest_path)
 
     run.summary.update(
         {
@@ -675,11 +670,11 @@ def run_training(model, train_entries, val_entries, args, run):
         )
 
     def save_progress(validation_pending, save_optimizer=False):
-        # Bind sidecars to the exact inference weights. A stopped write can never
-        # cause an optimizer from an older epoch to be restored onto newer weights.
+        # Record the weight file's size/time alongside epoch and step counts so
+        # stale sidecars are rejected without reading the whole weight file.
         snapshot = {
-            "format_version": 1,
-            "weights_sha256": latest_digest,
+            "format_version": 2,
+            "weights_stamp": latest_stamp,
             "completed_epoch": start_epoch,
             "global_step": global_step,
             "validation_pending": validation_pending,
@@ -691,7 +686,7 @@ def run_training(model, train_entries, val_entries, args, run):
         if save_optimizer and not getattr(args, "weights_only", False):
             atomic_torch_save(
                 {
-                    "weights_sha256": latest_digest,
+                    "weights_stamp": latest_stamp,
                     "completed_epoch": start_epoch,
                     "global_step": global_step,
                     "optimizer_state": optimizer.state_dict(),
@@ -766,7 +761,8 @@ def run_training(model, train_entries, val_entries, args, run):
         history.append(row)
 
         # Save before validation, with optimizer/RNG sidecars for the next restart.
-        latest_digest = save_weights(model.net, latest_path, checksum=True)
+        save_weights(model.net, latest_path)
+        latest_stamp = weights_stamp(latest_path)
         save_progress(True, save_optimizer=True)
         log(f"LATEST AND RESUME STATE SAVED before validation: {latest_path}")
         finish_validation(row)
@@ -842,7 +838,7 @@ def train(records, data_settings, settings, cellpose_settings, checkpoints, devi
         "data": asdict(data_settings),
         "cellpose": asdict(cellpose_settings),
         "training": asdict(settings),
-        "split_sha256": sha256_file(data_settings.split_file),
+        "split_assignments": split_assignments(records),
         "cellpose_version": CELLPOSE_VERSION,
         "ignore_policy": "original_id_1_excluded_v1",
     }
@@ -860,7 +856,8 @@ def train(records, data_settings, settings, cellpose_settings, checkpoints, devi
 
             if (
                 previous["cellpose"] != config["cellpose"]
-                or previous["split_sha256"] != config["split_sha256"]
+                or previous.get("split_assignments", config["split_assignments"])
+                != config["split_assignments"]
             ):
                 raise ValueError(
                     "Saved Cellpose configuration/split differs; choose a new fiber output_dir"

@@ -1,7 +1,5 @@
-import hashlib
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,7 +35,6 @@ class DownloadTests(unittest.TestCase):
                 directory=Path(temporary) / "checkpoints",
                 fiber_url="https://drive.google.com/file/d/fiber_ID/view?usp=sharing",
                 axon_url="https://drive.google.com/uc?id=axon_ID",
-                fiber_sha256=hashlib.sha256(payload).hexdigest(),
             )
 
             with patch("gdown.download", side_effect=fake_download) as download:
@@ -69,16 +66,13 @@ class DownloadTests(unittest.TestCase):
 
             self.assertEqual((folder / "fiber.pt").read_bytes(), b"existing-fiber")
 
-    def test_error_pages_and_bad_hashes_are_not_published(self):
+    def test_error_pages_and_empty_files_are_not_published(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             (folder / "fiber.pt").write_bytes(b"existing-fiber")
             settings = CheckpointSettings(directory=folder, axon_url="axon_ID")
 
-            for payload, checksum in (
-                (b"<!DOCTYPE html><html>permission denied</html>", ""),
-                (b"wrong-hash", "a" * 64),
-            ):
+            for payload in (b"<!DOCTYPE html><html>permission denied</html>", b""):
 
                 def fake_download(**kwargs):
                     Path(kwargs["output"]).write_bytes(payload)
@@ -86,7 +80,7 @@ class DownloadTests(unittest.TestCase):
 
                 with patch("gdown.download", side_effect=fake_download):
                     with self.assertRaises(RuntimeError):
-                        ensure_checkpoints(replace(settings, axon_sha256=checksum))
+                        ensure_checkpoints(settings)
 
                 self.assertFalse((folder / "axon.pt").exists())
                 self.assertEqual({path.name for path in folder.iterdir()}, {"fiber.pt"})

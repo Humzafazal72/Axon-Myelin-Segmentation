@@ -87,10 +87,6 @@ class CheckpointSettings:
     fiber_url: str = ""
     axon_url: str = ""
 
-    # Optional SHA256 hashes of the final files. Leave blank until available.
-    fiber_sha256: str = ""
-    axon_sha256: str = ""
-
 
 @dataclass(frozen=True)
 class PredictionSettings:

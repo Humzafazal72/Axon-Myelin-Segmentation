@@ -7,7 +7,7 @@ from config import AXON, CELLPOSE, CHECKPOINTS, DATA, DEVICE, PREDICTION
 from tem_pipeline.checkpoints import ensure_checkpoints
 from tem_pipeline.data import index_images, read_array
 from tem_pipeline.inference import PipelinePredictor, save_prediction
-from tem_pipeline.utils import resolve_device, sha256_file, write_json
+from tem_pipeline.utils import resolve_device, write_json
 
 
 def main(
@@ -47,7 +47,7 @@ def main(
         "cellpose_shape_hw": list(cellpose.shape),
         "cellpose": asdict(cellpose),
         "axon": asdict(axon),
-        "checkpoints_sha256": {stage: sha256_file(path) for stage, path in paths.items()},
+        "checkpoints": {stage: str(path) for stage, path in paths.items()},
         "outputs": [],
     }
     manifest["axon"]["base_channels"] = predictor.axon_base_channels

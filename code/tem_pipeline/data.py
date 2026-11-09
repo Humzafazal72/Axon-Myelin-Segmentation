@@ -62,6 +62,11 @@ def discover_pairs(settings):
     ]
 
 
+def split_assignments(records):
+    """Store the actual split memberships for straightforward resume comparisons."""
+    return sorted([[row["micrograph_id"], row["split"]] for row in records])
+
+
 def load_training_split(settings):
     """Create once, then reuse the saved assignments even if paths move.
 

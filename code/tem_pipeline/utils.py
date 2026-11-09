@@ -1,22 +1,11 @@
 """Small I/O and reproducibility helpers shared by the submission scripts."""
 
 import csv
-import hashlib
 import json
 import random
 from pathlib import Path
 
 import numpy as np
-
-
-def sha256_file(path):
-    digest = hashlib.sha256()
-
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-
-    return digest.hexdigest()
 
 
 def write_json(path, value):

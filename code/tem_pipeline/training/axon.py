@@ -11,7 +11,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
-from ..data import read_array
+from ..data import read_array, split_assignments
 from ..models.unet import SmallUNet
 from ..preprocessing import (
     expand_box,
@@ -21,7 +21,7 @@ from ..preprocessing import (
     pad_inputs,
     validate_pair,
 )
-from ..utils import resolve_device, save_torch, seed_everything, sha256_file, write_csv, write_json
+from ..utils import resolve_device, save_torch, seed_everything, write_csv, write_json
 
 
 def prepare_crops(records, data_settings, axon_settings, output_dir):
@@ -247,7 +247,7 @@ def train(records, data_settings, settings, axon_settings, checkpoints, device_n
     output_dir.mkdir(parents=True, exist_ok=True)
     latest_path, best_path = output_dir / "last.pt", output_dir / "best.pt"
     contract = dict(
-        split_sha256=sha256_file(data_settings.split_file),
+        split_assignments=split_assignments(records),
         native_shape=list(data_settings.native_shape),
         base_channels=axon_settings.base_channels,
         context=axon_settings.context,

@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from dataclasses import replace
@@ -125,6 +126,22 @@ class TrainingTests(unittest.TestCase):
                 {train_count * 3},
             )
             self.assertFalse(list(training.output_dir.rglob("*.tmp")))
+
+            # A replaced/touched weight file must not inherit stale optimizer
+            # state just because its progress sidecar still has the same name.
+            latest_path = training.output_dir / "models" / "fiber_latest.pt"
+            stat = latest_path.stat()
+            os.utime(latest_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+
+            with patch("cellpose.models.CellposeModel", side_effect=TinyCellpose):
+                fiber.train(
+                    records, data, replace(training, epochs=4), cellpose, checkpoints, "cpu"
+                )
+
+            restarted = torch.load(optimizer_path, weights_only=True)["optimizer_state"]
+            self.assertEqual(
+                {int(state["step"]) for state in restarted["state"].values()}, {train_count}
+            )
 
     def test_axon_training_uses_only_train_val_then_resumes_and_publishes(self):
         with tempfile.TemporaryDirectory() as temporary:

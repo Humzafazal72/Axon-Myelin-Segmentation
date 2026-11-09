@@ -126,7 +126,7 @@ uses **GT** fibers and does not require a trained Stage 1 model.
 Training artifacts and resumable states live under `code/runs/fiber/` and
 `code/runs/axon/`. Both stage settings specify **total** target epochs, including
 already completed epochs. The fiber trainer can resume after interrupted
-validation using checksum-bound optimizer/RNG sidecars. The axon trainer resumes
+validation using optimizer/RNG sidecars and saved file size/time metadata. The axon trainer resumes
 from completed epochs with optimizer, scheduler, scaler, and RNG state. With
 multiple persistent data-loader workers, worker-local augmentation streams are
 not guaranteed to match an uninterrupted process exactly; use `num_workers=0`
@@ -155,8 +155,7 @@ axon_url: str = ""  # TODO: https://drive.google.com/file/d/AXON_FILE_ID/view
 ```
 
 Make both files accessible to “Anyone with the link.” Raw file IDs and Drive
-`uc?id=...` links also work. Folder links are not supported. Optional SHA256
-fields verify the downloaded files and any existing local files.
+`uc?id=...` links also work. Folder links are not supported.
 
 Download explicitly with:
 
@@ -201,7 +200,7 @@ conversion. Set `PredictionSettings.overwrite=True` to replace existing masks.
 
 The prediction manifest is written **beside** the output folder, for example
 `predictions_manifest.json`; `predictions/` contains only masks. It records
-checkpoint hashes, settings, written filenames, and completion status.
+checkpoint paths, settings, written filenames, and completion status.
 
 The default Cellpose tile size is 512 for CPDINO. Set `CellposeSettings.bsize=256`
 for a CPSAM checkpoint. The backbone and U-Net width are loaded from their
