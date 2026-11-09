@@ -80,12 +80,9 @@ class AxonTrainingSettings:
 class CheckpointSettings:
     directory: Path = CODE_DIR / "checkpoints"
     fiber_filename: str = "fiber.pt"
-    axon_filename: str = "axon.pt"
-
-    # TODO: paste public Google Drive FILE links (not folder links) here.
-    # Alternatively, place existing checkpoints at the two filenames above.
+    axon_filename: str = "best_unet.pt"
     fiber_url: str = ""
-    axon_url: str = ""
+    axon_url: str = "https://drive.google.com/file/d/1CxJCYN2mkspmId95eLLG9xtcFRO6vFyM/view?usp=drive_link"
 
 
 @dataclass(frozen=True)
