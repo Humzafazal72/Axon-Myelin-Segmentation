@@ -154,8 +154,7 @@ fiber_url: str = ""  # TODO: https://drive.google.com/file/d/FIBER_FILE_ID/view
 axon_url: str = ""  # TODO: https://drive.google.com/file/d/AXON_FILE_ID/view
 ```
 
-Make both files accessible to “Anyone with the link.” Raw file IDs and Drive
-`uc?id=...` links also work. Folder links are not supported.
+Make both files accessible to “Anyone with the link.”
 
 Download explicitly with:
 
@@ -163,11 +162,8 @@ Download explicitly with:
 python code/download_weights.py
 ```
 
-The script uses `gdown`, reuses valid local files, checks for empty files or HTML
-error pages, and atomically publishes successful downloads. It checks all missing
-links before starting a network request. Missing links produce an error naming
-the settings to fill; they are not fabricated or silently replaced with base
-model weights.
+The script uses `gdown` to download missing files directly into the checkpoint
+folder. Existing files are skipped.
 
 ## Predict
 
@@ -230,13 +226,4 @@ main(
     ),
     checkpoints=replace(CHECKPOINTS, directory=Path("/kaggle/working/checkpoints")),
 )
-```
-
-## Checks
-
-The tests use synthetic data and small CPU models; they do not download trained
-weights or run the actual TEM dataset:
-
-```bash
-python -m unittest discover -s code/tests -v
 ```

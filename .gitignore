@@ -17,3 +17,5 @@ predictions/*
 
 docs/
 output/
+test/
+/code/overlay_mask.py
